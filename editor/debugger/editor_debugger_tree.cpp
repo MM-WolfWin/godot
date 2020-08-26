@@ -33,6 +33,7 @@
 #include "editor/editor_node.h"
 #include "scene/debugger/scene_debugger.h"
 #include "scene/resources/packed_scene.h"
+#include "servers/display_server.h"
 
 EditorDebuggerTree::EditorDebuggerTree() {
 	set_v_size_flags(SIZE_EXPAND_FILL);
@@ -40,35 +41,29 @@ EditorDebuggerTree::EditorDebuggerTree() {
 
 	// Popup
 	item_menu = memnew(PopupMenu);
-	item_menu->connect_compat("id_pressed", this, "_item_menu_id_pressed");
+	item_menu->connect("id_pressed", callable_mp(this, &EditorDebuggerTree::_item_menu_id_pressed));
 	add_child(item_menu);
 
 	// File Dialog
 	file_dialog = memnew(EditorFileDialog);
-	file_dialog->connect_compat("file_selected", this, "_file_selected");
+	file_dialog->connect("file_selected", callable_mp(this, &EditorDebuggerTree::_file_selected));
 	add_child(file_dialog);
 }
 
 void EditorDebuggerTree::_notification(int p_what) {
 	if (p_what == NOTIFICATION_POSTINITIALIZE) {
-		connect_compat("cell_selected", this, "_scene_tree_selected");
-		connect_compat("item_collapsed", this, "_scene_tree_folded");
-		connect_compat("item_rmb_selected", this, "_scene_tree_rmb_selected");
+		connect("cell_selected", callable_mp(this, &EditorDebuggerTree::_scene_tree_selected));
+		connect("item_collapsed", callable_mp(this, &EditorDebuggerTree::_scene_tree_folded));
+		connect("item_rmb_selected", callable_mp(this, &EditorDebuggerTree::_scene_tree_rmb_selected));
 	}
 }
 
 void EditorDebuggerTree::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("_scene_tree_selected"), &EditorDebuggerTree::_scene_tree_selected);
-	ClassDB::bind_method(D_METHOD("_scene_tree_folded"), &EditorDebuggerTree::_scene_tree_folded);
-	ClassDB::bind_method(D_METHOD("_scene_tree_rmb_selected"), &EditorDebuggerTree::_scene_tree_rmb_selected);
-	ClassDB::bind_method(D_METHOD("_item_menu_id_pressed"), &EditorDebuggerTree::_item_menu_id_pressed);
-	ClassDB::bind_method(D_METHOD("_file_selected"), &EditorDebuggerTree::_file_selected);
 	ADD_SIGNAL(MethodInfo("object_selected", PropertyInfo(Variant::INT, "object_id"), PropertyInfo(Variant::INT, "debugger")));
 	ADD_SIGNAL(MethodInfo("save_node", PropertyInfo(Variant::INT, "object_id"), PropertyInfo(Variant::STRING, "filename"), PropertyInfo(Variant::INT, "debugger")));
 }
 
 void EditorDebuggerTree::_scene_tree_selected() {
-
 	if (updating_scene_tree) {
 		return;
 	}
@@ -84,15 +79,14 @@ void EditorDebuggerTree::_scene_tree_selected() {
 }
 
 void EditorDebuggerTree::_scene_tree_folded(Object *p_obj) {
-
 	if (updating_scene_tree) {
-
 		return;
 	}
 	TreeItem *item = Object::cast_to<TreeItem>(p_obj);
 
-	if (!item)
+	if (!item) {
 		return;
+	}
 
 	ObjectID id = ObjectID(uint64_t(item->get_metadata(0)));
 	if (unfold_cache.has(id)) {
@@ -103,17 +97,17 @@ void EditorDebuggerTree::_scene_tree_folded(Object *p_obj) {
 }
 
 void EditorDebuggerTree::_scene_tree_rmb_selected(const Vector2 &p_position) {
-
 	TreeItem *item = get_item_at_position(p_position);
-	if (!item)
+	if (!item) {
 		return;
+	}
 
 	item->select(0);
 
 	item_menu->clear();
-	item_menu->add_icon_item(get_icon("CreateNewSceneFrom", "EditorIcons"), TTR("Save Branch as Scene"), ITEM_MENU_SAVE_REMOTE_NODE);
-	item_menu->add_icon_item(get_icon("CopyNodePath", "EditorIcons"), TTR("Copy Node Path"), ITEM_MENU_COPY_NODE_PATH);
-	item_menu->set_global_position(get_global_mouse_position());
+	item_menu->add_icon_item(get_theme_icon("CreateNewSceneFrom", "EditorIcons"), TTR("Save Branch as Scene"), ITEM_MENU_SAVE_REMOTE_NODE);
+	item_menu->add_icon_item(get_theme_icon("CopyNodePath", "EditorIcons"), TTR("Copy Node Path"), ITEM_MENU_COPY_NODE_PATH);
+	item_menu->set_position(get_screen_transform().xform(get_local_mouse_position()));
 	item_menu->popup();
 }
 
@@ -137,9 +131,9 @@ void EditorDebuggerTree::update_scene_tree(const SceneDebuggerTree *p_tree, int 
 	const String filter = EditorNode::get_singleton()->get_scene_tree_dock()->get_filter();
 
 	// Nodes are in a flatten list, depth first. Use a stack of parents, avoid recursion.
-	List<Pair<TreeItem *, int> > parents;
+	List<Pair<TreeItem *, int>> parents;
 	for (int i = 0; i < p_tree->nodes.size(); i++) {
-		TreeItem *parent = NULL;
+		TreeItem *parent = nullptr;
 		if (parents.size()) { // Find last parent.
 			Pair<TreeItem *, int> &p = parents[0];
 			parent = p.first;
@@ -184,18 +178,20 @@ void EditorDebuggerTree::update_scene_tree(const SceneDebuggerTree *p_tree, int 
 			// Apply filters.
 			while (parent) {
 				const bool had_siblings = item->get_prev() || item->get_next();
-				if (filter.is_subsequence_ofi(item->get_text(0)))
+				if (filter.is_subsequence_ofi(item->get_text(0))) {
 					break; // Filter matches, must survive.
+				}
 				parent->remove_child(item);
 				memdelete(item);
-				if (had_siblings)
+				if (had_siblings) {
 					break; // Parent must survive.
+				}
 				item = parent;
 				parent = item->get_parent();
 				// Check if parent expects more children.
 				for (int j = 0; j < parents.size(); j++) {
 					if (parents[j].first == item) {
-						parent = NULL;
+						parent = nullptr;
 						break; // Might have more children.
 					}
 				}
@@ -207,15 +203,16 @@ void EditorDebuggerTree::update_scene_tree(const SceneDebuggerTree *p_tree, int 
 }
 
 String EditorDebuggerTree::get_selected_path() {
-	if (!get_selected())
+	if (!get_selected()) {
 		return "";
+	}
 	return _get_path(get_selected());
 }
 
 String EditorDebuggerTree::_get_path(TreeItem *p_item) {
 	ERR_FAIL_COND_V(!p_item, "");
 
-	if (p_item->get_parent() == NULL) {
+	if (p_item->get_parent() == nullptr) {
 		return "/root";
 	}
 	String text = p_item->get_text(0);
@@ -228,13 +225,10 @@ String EditorDebuggerTree::_get_path(TreeItem *p_item) {
 }
 
 void EditorDebuggerTree::_item_menu_id_pressed(int p_option) {
-
 	switch (p_option) {
-
 		case ITEM_MENU_SAVE_REMOTE_NODE: {
-
 			file_dialog->set_access(EditorFileDialog::ACCESS_RESOURCES);
-			file_dialog->set_mode(EditorFileDialog::MODE_SAVE_FILE);
+			file_dialog->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
 
 			List<String> extensions;
 			Ref<PackedScene> sd = memnew(PackedScene);
@@ -244,10 +238,9 @@ void EditorDebuggerTree::_item_menu_id_pressed(int p_option) {
 				file_dialog->add_filter("*." + extensions[i] + " ; " + extensions[i].to_upper());
 			}
 
-			file_dialog->popup_centered_ratio();
+			file_dialog->popup_file_dialog();
 		} break;
 		case ITEM_MENU_COPY_NODE_PATH: {
-
 			String text = get_selected_path();
 			if (text.empty()) {
 				return;
@@ -262,13 +255,14 @@ void EditorDebuggerTree::_item_menu_id_pressed(int p_option) {
 					text = text.substr(slash + 1);
 				}
 			}
-			OS::get_singleton()->set_clipboard(text);
+			DisplayServer::get_singleton()->clipboard_set(text);
 		} break;
 	}
 }
 
 void EditorDebuggerTree::_file_selected(const String &p_file) {
-	if (inspected_object_id.is_null())
+	if (inspected_object_id.is_null()) {
 		return;
+	}
 	emit_signal("save_node", inspected_object_id, p_file, debugger_id);
 }
